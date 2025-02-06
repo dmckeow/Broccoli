@@ -53,6 +53,8 @@ def parse_args():
     step2.add_argument('-nb_hits',          help='max nb of hits per species [default = 6]', metavar='', type=int, default=6)
     step2.add_argument('-max_gap',          help='max fraction of gap per position [default = 0.7]', metavar='', type=float, default=0.7)
     step2.add_argument('-phylogenies',      help='phylogenetic method: \'nj\' (neighbor joining), \'me\' (minimum evolution) or \'ml\' (maximum likelihood) [default = \'nj\']', metavar='', choices=['nj','me','ml'], default= 'nj')
+    step2.add_argument('-sub_step2_input',     help='path of files_start from step2 part1 - needed for step2 part2', metavar='', type=str)
+    step2.add_argument('-sub_step',         help='step2 substeps to be performed, 1, 2, or 3, intended to be run separately in nextflow', metavar='', type=str, default=None)
     
     step3 = parser.add_argument_group(' STEP 3  network analysis')
     step3.add_argument('-sp_overlap',       help='max ratio of overlapping species in phylogenetic trees [default = 0.5]', metavar='', type=float, default=0.5)
@@ -69,7 +71,7 @@ def parse_args():
     
     return args.steps, args.threads, \
     args.dir, args.ext, args.kmer_size, args.kmer_min_aa, \
-    args.e_value, args.nb_hits, args.path_diamond, args.path_fasttree, args.max_gap, args.phylogenies, \
+    args.e_value, args.nb_hits, args.path_diamond, args.path_fasttree, args.max_gap, args.phylogenies, args.sub_step2_input, args.sub_step, \
     args.sp_overlap, args.min_weight, args.min_nb_hits, args.chimeric_shared, args.chimeric_nb_sp, \
     args.ratio_ortho, args.not_same_sp
 
@@ -92,6 +94,20 @@ def parse_steps(p):
     if range_steps != (len(s) - 1):
         sys.exit('\n            ERROR: the steps should be consecutive (-steps option)\n\n')
     return s
+
+def parse_sub_step(p):
+    if p is None:
+        return None
+    try:
+        step = int(p)
+        if 1 <= step <= 3:
+            return step
+        else:
+            raise ValueError("Sub-step must be between 1 and 3")
+    except ValueError as e:
+        sys.exit(f'\n            ERROR: {str(e)}\n\n')
+    except:
+        sys.exit('\n            ERROR: the sub-step should be a single integer between 1 and 3 (-sub_step option)\n\n')
 
 
 def pre_checking_pgms(p_diamond, p_fasttree):
@@ -118,7 +134,7 @@ if __name__ == "__main__":
     ## get all arguments
     pre_steps, nb_threads, \
     directory, extension, length_kmer, min_aa, \
-    evalue, max_per_species, path_diamond, path_fasttree, trim_thres, phylo_method, \
+    evalue, max_per_species, path_diamond, path_fasttree, trim_thres, phylo_method, sub_step2_input, pre_sub_step, \
     sp_overlap, min_weight, min_nb_hits, chimeric_shared, chimeric_nb_sp, \
     limit_ortho, not_same_sp = parse_args()
 
@@ -132,21 +148,36 @@ if __name__ == "__main__":
     ## parse steps
     steps = parse_steps(pre_steps)
     
+    sub_step = parse_sub_step(pre_sub_step)
+    
     ## check if -dir option (cases of 1st step)
     if 1 in steps and directory is None:
         sys.exit('\n            ERROR: you need to specify an input directory (see -help)\n\n')
     
+    if sub_step == 2 and sub_step2_input is None:
+        sys.exit('\n            ERROR: running separate processes for step2 sub step2 phylomes requires list_files.txt (see -help)\n\n')
+    
     ## check path of executables if step 2 (diamond, fasttree)
     if 2 in steps:
         pre_checking_pgms(path_diamond, path_fasttree)
-        
+    
     ## execute the steps
     if 1 in steps:
         broccoli_step1.step1_kmer_clustering(directory, extension, length_kmer, min_aa, nb_threads)
 
     if 2 in steps:
-        broccoli_step2.step2_phylomes(evalue, max_per_species, path_diamond, path_fasttree, trim_thres, phylo_method, nb_threads)
-    
+        if sub_step is None:
+            # runs the original step2 with single multithreaded process
+            broccoli_step2.step2_phylomes(evalue, max_per_species, path_diamond, path_fasttree, trim_thres, phylo_method, nb_threads)
+        else:
+            # runs step2 in three parts, allowing the phylomes to be run as a job array in nextflow
+            if sub_step == 1:
+                broccoli_step2.step2_part1_prepare(evalue, max_per_species, path_diamond, path_fasttree, trim_thres, phylo_method, nb_threads)
+            if sub_step == 2:
+                broccoli_step2.step2_part2_process(sub_step2_input, nb_threads)
+            if sub_step == 3:
+                broccoli_step2.step2_part3_cleanup()
+
     if 3 in steps:
         broccoli_step3.step3_orthology_network(sp_overlap, min_weight, min_nb_hits, chimeric_shared, chimeric_nb_sp, nb_threads)
     

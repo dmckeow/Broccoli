@@ -1,6 +1,4 @@
 '''
-    THIS IS A MODIFIED VERSION OF BROCCOLI BY DM
-
     This file is part of Broccoli.
 
     Broccoli is free software: you can redistribute it and/or modify
@@ -78,7 +76,7 @@ def step2_phylomes(eval, msp, pdia, pfas, tt, pm, nt):
     
     ## process each proteome
     print('\n # build phylomes ... be patient')
-    array_process_file(list_files, nb_threads)
+    multithread_process_file(list_files, nb_threads)
     
     ## save prot 2 species dict (needed for steps 3 and 4)
     save_prot_2_sp(name_2_sp_phylip_seq)
@@ -170,33 +168,6 @@ def multithread_process_file(l_file, n_threads):
     for l in results_2:
         log_file.write(dict_species[l[0]] + '	' + '	'.join(l[1:]) + '\n')
     log_file.close()
-
-
-
-def array_process_file(l_file, n_threads):
-    # start multiprocessing (replace ThreadPool with Pool)
-    files_start = zip(l_file, itertools.repeat(out_dir), itertools.repeat(l_file), itertools.repeat(path_diamond), itertools.repeat(db_dir),
-                      itertools.repeat(max_per_species), itertools.repeat(evalue), itertools.repeat(all_species), itertools.repeat(name_2_sp_phylip_seq),
-                      itertools.repeat(trim_thres), itertools.repeat(phylo_method), itertools.repeat(path_fasttree))
-    
-    # Use multiprocessing.Pool to create separate processes
-    with multiprocessing.ThreadPool(processes=n_threads) as pool:
-        tmp_res = pool.starmap(process_file, files_start, chunksize=1)
-    
-    # Collect results from all processes
-    results_2 = tmp_res
-    
-    # load species dict
-    dict_species = utils.get_pickle(Path('dir_step1') / 'species_index.pic')
-    
-    # create log file
-    with open(out_dir / 'log_step2.txt', 'w+') as log_file:
-        log_file.write('#species_file\tnb_phylo\tnb_NO_phylo\tnb_empty_ali_ali\tnb_pbm_tree\n')
-        
-        # save log
-        for l in results_2:
-            log_file.write(dict_species[l[0]] + '\t' + '\t'.join(l[1:]) + '\n')
-
 
 def analyse_species(dict_sp):
     present = 0

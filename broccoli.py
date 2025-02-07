@@ -54,7 +54,7 @@ def parse_args():
     step2.add_argument('-max_gap',          help='max fraction of gap per position [default = 0.7]', metavar='', type=float, default=0.7)
     step2.add_argument('-phylogenies',      help='phylogenetic method: \'nj\' (neighbor joining), \'me\' (minimum evolution) or \'ml\' (maximum likelihood) [default = \'nj\']', metavar='', choices=['nj','me','ml'], default= 'nj')
     step2.add_argument('-sub_step2_input',     help='path of files_start from step2 part1 - needed for step2 part2', metavar='', type=str)
-    step2.add_argument('-sub_step',         help='step2 substeps to be performed, 1, 2, or 3, intended to be run separately in nextflow', metavar='', type=str, default=None)
+    step2.add_argument('-sub_step',         help='step2 substeps to be performed, 1 or 2, intended to be run separately in nextflow', metavar='', type=str, default=None)
     
     step3 = parser.add_argument_group(' STEP 3  network analysis')
     step3.add_argument('-sp_overlap',       help='max ratio of overlapping species in phylogenetic trees [default = 0.5]', metavar='', type=float, default=0.5)
@@ -100,14 +100,14 @@ def parse_sub_step(p):
         return None
     try:
         step = int(p)
-        if 1 <= step <= 3:
+        if 1 <= step <= 2:
             return step
         else:
-            raise ValueError("Sub-step must be between 1 and 3")
+            raise ValueError("Sub-step must be between 1 and 2")
     except ValueError as e:
         sys.exit(f'\n            ERROR: {str(e)}\n\n')
     except:
-        sys.exit('\n            ERROR: the sub-step should be a single integer between 1 and 3 (-sub_step option)\n\n')
+        sys.exit('\n            ERROR: the sub-step should be a single integer between 1 and 2 (-sub_step option)\n\n')
 
 
 def pre_checking_pgms(p_diamond, p_fasttree):
@@ -174,9 +174,9 @@ if __name__ == "__main__":
             if sub_step == 1:
                 broccoli_step2.step2_part1_prepare(evalue, max_per_species, path_diamond, path_fasttree, trim_thres, phylo_method, nb_threads)
             if sub_step == 2:
+                print('\n # build phylomes ... be patient\nRunning substep, with an independent phylome process for each proteome\n')
+                print(sub_step2_input)
                 broccoli_step2.step2_part2_process(sub_step2_input, nb_threads)
-            if sub_step == 3:
-                broccoli_step2.step2_part3_cleanup()
 
     if 3 in steps:
         broccoli_step3.step3_orthology_network(sp_overlap, min_weight, min_nb_hits, chimeric_shared, chimeric_nb_sp, nb_threads)

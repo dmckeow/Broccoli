@@ -83,3 +83,11 @@ def BFS_algo(edges, source):
                 yield v
                 seen.add(v)
                 nextlevel.update(edges[v])
+
+# general unpickling
+def get_pickle_direct(file_path):
+    with open(file_path, 'rb') as content:
+        gc.disable()  # disable garbage collector
+        data = pickle.load(content)  # just load the data directly
+        gc.enable()   # enable garbage collector again
+    return data

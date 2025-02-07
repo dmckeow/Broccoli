@@ -74,7 +74,7 @@ def step2_phylomes(eval, msp, pdia, pfas, tt, pm, nt):
     db_dir = out_dir / 'databases'
     db_dir.mkdir(parents=True, exist_ok=True)
     multithread_databases(list_files, nb_threads)
-    
+
     ## process each proteome
     print('\n # build phylomes ... be patient')
     multithread_process_file(list_files, nb_threads)
@@ -152,6 +152,7 @@ def multithread_process_file(l_file, n_threads):
     files_start = zip(l_file, itertools.repeat(out_dir), itertools.repeat(l_file), itertools.repeat(path_diamond), itertools.repeat(db_dir),
             itertools.repeat(max_per_species), itertools.repeat(evalue), itertools.repeat(all_species), itertools.repeat(name_2_sp_phylip_seq),
             itertools.repeat(trim_thres), itertools.repeat(phylo_method), itertools.repeat(path_fasttree))
+
     pool = ThreadPool(n_threads) 
     tmp_res = pool.starmap_async(process_file, files_start, chunksize=1)
     results_2 = tmp_res.get()
@@ -229,7 +230,8 @@ def get_positions(ref_name, hits, trim_thres):
 
 
 def process_file(file, out_dir, list_files, path_diamond, db_dir, max_per_species, evalue, all_species, name_2_sp_phylip_seq, trim_thres,
-                 phylo_method, path_fasttree):       
+                 phylo_method, path_fasttree):
+
     ## extract index
     index = file.split('.')[0]
     
@@ -434,11 +436,37 @@ def save_prot_2_sp(d):
     utils.save_pickle(out_dir / 'prot_str_2_species.pic', d_str)
     utils.save_pickle(out_dir / 'prot_int_2_species.pic', d_int)
    
+################################################################################################################
+################################################################################################################
+################################################################################################################
+################################################################################################################
 
 # DM's extra version of step2 which splits the preparation, processing, and final aggregation
 # This is to allow the phylomes to be run as independent jobs instead of one multithreaded process
 
-# APPROACH1 - split step2 into 3 parts so we can submit step2.2 directly from a list of parameters
+# APPROACH1 - split step2 into 2 parts so we can submit step2.2 directly from a list of parameters
+
+def multithread_process_file_parallel(files_start, n_threads):
+    out_dir = Path('dir_step2')
+
+    pool = ThreadPool(n_threads) 
+    tmp_res = pool.starmap_async(process_file, files_start, chunksize=1)
+    results_2 = tmp_res.get()
+    pool.close() 
+    pool.join()
+    
+    # load species dict
+    dict_species = utils.get_pickle(Path('dir_step1') / 'species_index.pic')
+    
+    # create log file
+    log_file = open(out_dir / 'log_step2.txt', 'w+')
+    log_file.write('#species_file	nb_phylo	nb_NO_phylo	nb_empty_ali_ali	nb_pbm_tree\n')
+    
+    # save log
+    for l in results_2:
+        log_file.write(dict_species[l[0]] + '	' + '	'.join(l[1:]) + '\n')
+    log_file.close()
+
 def step2_part1_prepare(eval, msp, pdia, pfas, tt, pm, nt):
     # Set global parameters
     global evalue, max_per_species, path_diamond, path_fasttree, trim_thres, phylo_method, nb_threads
@@ -455,10 +483,7 @@ def step2_part1_prepare(eval, msp, pdia, pfas, tt, pm, nt):
     # Create output directory (or empty it if it already exists)
     global out_dir
     out_dir = utils.create_out_dir('dir_step2')
-    Path(out_dir / 'dict_trees').mkdir()
-    Path(out_dir / 'dict_output').mkdir()
-    Path(out_dir / 'dict_similarity_ortho').mkdir()
-
+    
     # Check directory input data
     global list_files
     print('\n # check input files')
@@ -480,20 +505,46 @@ def step2_part1_prepare(eval, msp, pdia, pfas, tt, pm, nt):
     files_start = zip(list_files, itertools.repeat(out_dir), itertools.repeat(list_files), itertools.repeat(path_diamond), itertools.repeat(db_dir),
             itertools.repeat(max_per_species), itertools.repeat(evalue), itertools.repeat(all_species), itertools.repeat(name_2_sp_phylip_seq),
             itertools.repeat(trim_thres), itertools.repeat(phylo_method), itertools.repeat(path_fasttree))
+    
+    print("""
+    \n\n---STEP 2, substep 2: pickling inputs for phylome process\n
+    Here are the inputs saved (dir_step2/files_start_*.pic), with one for each input proteome:\n
+    """)
 
-    utils.save_pickle(out_dir / 'files_start.pic', files_start)
+    # Save each sample inputs to process
+    # Save each iteration of files_start as separate pickle and text files
+    for idx, item in enumerate(files_start):
+        # Save each item as a separate pickle file
+        pickle_file_path = out_dir / f'files_start_{idx}.pic'
+        utils.save_pickle(pickle_file_path, item)
 
-    with open('files_start.txt', 'w') as f:
-        for line in files_start:
-            f.write('\t'.join(map(str, line)) + '\n')
+        # print output for logs
+        modified_item = re.sub(r'\{.*?\}', '{}', str(item))
+        print(idx, modified_item)
 
-def step2_part2_process(list_files, nb_threads):
-    print('\n # build phylomes ... be patient')
-    multithread_process_file(list_files, nb_threads)
+def step2_part2_process(sub_step2_input, nb_threads):
+    print('\n # Running: ', sub_step2_input)
 
+    out_dir = Path('dir_step2')
 
-def step2_part3_cleanup():
-    global db_dir
+    Path(out_dir / 'dict_trees').mkdir(exist_ok=True)
+    Path(out_dir / 'dict_output').mkdir(exist_ok=True)
+    Path(out_dir / 'dict_similarity_ortho').mkdir(exist_ok=True)
+    
+    list_file = utils.get_pickle_direct(Path(sub_step2_input))
+
+    modified_list_file = re.sub(r'\{.*?\}', '{}', str(list_file))
+    print(modified_list_file)
+
+    # Unpack the tuple to suit that inputs expected by process_file
+    (file, out_dir, list_files, path_diamond, db_dir, max_per_species, evalue, all_species, name_2_sp_phylip_seq, trim_thres, phylo_method, path_fasttree) = list_file
+    
+    # This way runs with NO multithreading - was for testing
+    ##process_file(file, out_dir, list_files, path_diamond, db_dir, max_per_species, evalue, all_species, name_2_sp_phylip_seq, trim_thres, phylo_method, path_fasttree)
+
+    # Run with multhreads - this way multithreading is applied within each process running for EACH proteome, as opposed to all proteomes sharing the same pool of threads
+    multithread_process_file_parallel([list_file], nb_threads)
+
     db_dir = out_dir / 'databases'
     shutil.rmtree(db_dir)
     print(' done\n')
